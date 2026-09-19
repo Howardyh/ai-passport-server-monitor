@@ -79,6 +79,7 @@ class InstallPassportSkillsTest(unittest.TestCase):
         self.assertIn("All 5 skill links", output)
 
     def test_install_creates_relative_links_and_is_idempotent(self) -> None:
+        self.symlink(self.root / "symlink-capability", self.root / "skills")
         code, _, errors = self.run_installer("--install")
         self.assertEqual((code, errors), (0, ""))
         snapshots = {}
@@ -203,6 +204,7 @@ class InstallPassportSkillsTest(unittest.TestCase):
         self.assertEqual(parent.read_text(encoding="utf-8"), "preserve parent")
 
     def test_existing_other_skill_is_preserved(self) -> None:
+        self.symlink(self.root / "symlink-capability", self.root / "skills")
         other = self.root / ".agents" / "skills" / "user-skill" / "SKILL.md"
         other.parent.mkdir(parents=True)
         other.write_text("user-owned skill", encoding="utf-8")
@@ -226,6 +228,7 @@ class InstallPassportSkillsTest(unittest.TestCase):
             self.assertFalse((self.root / ".agents").exists())
 
     def test_partial_installation_failure_reports_kept_links_and_manual_paths(self) -> None:
+        self.symlink(self.root / "symlink-capability", self.root / "skills")
         original = Path.symlink_to
         failing = INSTALLER.SKILL_NAMES[2]
 

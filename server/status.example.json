@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "timestamp": 1790000000,
+  "hostname": "server",
+  "uptime": 123456,
+  "cpu": {"usage": 23.4, "load1": 0.53, "load5": 0.38, "load15": 0.29, "temperature": null},
+  "memory": {"total": 4096000000, "used": 2100000000, "percent": 51.3},
+  "disk": {"total": 100000000000, "used": 45000000000, "percent": 45},
+  "network": {"rx_bytes": 123456789, "tx_bytes": 987654321, "rx_bps": 13520, "tx_bps": 3250},
+  "services": {"nginx": true, "mariadb": true, "php_fpm": true}
+}

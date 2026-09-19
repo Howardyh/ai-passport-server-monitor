@@ -39,3 +39,7 @@
 - 与当前 BSP 音频路径匹配时优先采用 16 kHz、16 位单声道 PCM。
 - 嵌入音频前评估 Flash 与内部 RAM 成本；长录音应流式或分块。
 - 无再分发许可不提交媒体文件。
+
+## Server Monitor 设计示意
+
+`images/server-monitor-preview.svg` 是代码生成的布局示意，使用模拟指标，并非真机截图。此原创项目资源遵循仓库 MIT 许可证，仅用于根 README，不在固件中创建图片缓冲。

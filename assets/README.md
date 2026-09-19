@@ -41,3 +41,7 @@ Store reusable music and sound-effect sources in `music/`.
 - Prefer 16 kHz, 16-bit mono PCM when it matches the current BSP audio path.
 - Check Flash and internal-RAM cost before embedding audio; stream or chunk long recordings.
 - Do not commit media without redistribution permission.
+
+## Server Monitor design preview
+
+`images/server-monitor-preview.svg` is a code-generated layout illustration with synthetic metrics, not a device screenshot. It is an original project asset under the repository MIT license, used only in the root README; no firmware image buffer is created.

@@ -1,0 +1,33 @@
+[Unit]
+Description=AI Passport read-only server status agent
+After=network.target
+
+[Service]
+Type=simple
+User=passport-status
+Group=passport-status
+WorkingDirectory=/opt/passport-status
+EnvironmentFile=/etc/passport-status.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/passport-status/.venv/bin/python /opt/passport-status/passport_status.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0077
+TasksMax=16
+MemoryMax=128M
+
+[Install]
+WantedBy=multi-user.target

@@ -55,8 +55,10 @@ run_static_checks() {
         -o "${test_dir}/test_bsp_audio_recovery"
     "${test_dir}/test_bsp_audio_recovery"
     for demo in audio low_power ble wifi; do
+        # Each fixture is one complete translation unit. Whole-program DCE also
+        # drops unused UI entry points on PE/COFF, whose section GC differs from ELF.
         "${CC:-cc}" -std=c11 -Wall -Wextra -Werror \
-            -ffunction-sections -fdata-sections -Itests/demo_stubs -Imain \
+            -O2 -fwhole-program -ffunction-sections -fdata-sections -Itests/demo_stubs -Imain \
             "tests/test_demo_${demo}_runtime.c" -Wl,--gc-sections \
             -o "${test_dir}/test_demo_${demo}_runtime"
         "${test_dir}/test_demo_${demo}_runtime"
@@ -66,12 +68,22 @@ run_static_checks() {
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_verify_firmware.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_archive_firmware.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_install_passport_skills.py
+    PYTHONDONTWRITEBYTECODE=1 python3 tools/test-monitor.py
     rm -rf "${test_dir}"
     echo "Host tests: PASS"
 }
 
 run_firmware_checks() (
     local validation_build_dir
+
+    # Preserve the official build/merge/verify/archive sequence on native Windows.
+    # Use the activated IDF Python rather than a POSIX /tmp path in CMake.
+    case "${OSTYPE}" in
+        msys*|cygwin*)
+            "${IDF_PYTHON_ENV_PATH}/Scripts/python.exe" tools/validate-firmware-windows.py
+            return
+            ;;
+    esac
 
     if ! command -v idf.py >/dev/null 2>&1; then
         echo "ERROR: idf.py is not available; activate ESP-IDF 5.5.3 first." >&2
