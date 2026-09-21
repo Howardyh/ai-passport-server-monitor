@@ -1,152 +1,119 @@
 [English](README.md)
 
-# AI Passport Server Monitor
+# fl0AT AI Passport Server Monitor
 
-适用于 FoloToy AI Passport 的实时服务器监控固件。
+**v0.2.0-beta.1 — Architecture Rewrite。Hardware validation pending.**
 
-基于 FoloToy AI Passport 固件与硬件平台，是独立社区项目，并非 FoloToy
-官方产品。课程表固件是另一个独立项目，本仓库不包含其源码或历史。
+独立 ESP32-C3 固件：8 MB Flash、无 PSRAM、240×320 ST7789、CW2017 电量计与
+ES8311 扬声器。保留官方 BSP 引脚和成熟驱动，只启动 Server Monitor，不包含课程表或
+官方 Demo 菜单。许可证见 [LICENSE](LICENSE)。
 
-官方基础：FoloToy/ai-passport main，提交
-`31759c4d63dd0d0d6580d6f74639ed5315bcd2c3`。
+## 网络与协议
 
-硬件：ESP32-C3，8 MB Flash，无 PSRAM；ST7789P3 240 x 320 竖屏 RGB565；
-CW2017 电量计；ESP-IDF 5.5.3。许可证见 [LICENSE](LICENSE)。
+WSS 主通道默认 `wss://status.dyhcn.com/ws`，HTTPS 备用默认
+`https://status.dyhcn.com/api/v1/status`，均可配置，共用 ServerState。
+[服务器 Agent](server/README.zh_CN.md) 每秒采样、每两秒广播缓存快照；REST 读取同一缓存。
+仅监听 127.0.0.1:8765，Nginx 负责 TLS。两种通道都通过 Authorization Bearer header
+认证，不把 Token 放 URL。
 
-## Hardware / 硬件
+协议 v1 包含 `v/type/seq/timestamp`，实现 status 和 alert；service/message/update_available
+暂保留并安全忽略，更新可用性通过 manifest 查询。temperature 缺失或 null 显示 `--`；
+其余必需字段非法时拒绝整条数据并保留上次有效状态。[JSON 示例](server/status.example.json)。
 
-引脚、ADC 按键阈值和 CW2017 操作全部来自未修改的官方 `components/bsp`。
-应用 CMake 只编译 Server Monitor，唯一链接的入口是 `main/monitor_app.c`。
-官方参考测试菜单、示例页面、音频和蓝牙不进入应用；无 ICS、课程数据、课程页面或提醒。
+官方 WebSocket 客户端使用 CA bundle 与主机名验证，20 秒 ping、10 秒 pong 超时；
+30 秒没有有效应用数据也重建连接。重连基准 1/2/4/8/16/30 秒，加入向下 0–10% 抖动。
+三次失败后每 10 秒 HTTPS 轮询，仍持续恢复 WSS；收到新 WSS 数据恢复 LIVE。
+15 秒后 STALE，60 秒后 OFFLINE，保留指标。延迟指 HTTPS 请求耗时，不是 ping 或 WSS RTT。
 
-## Architecture / 架构
+## 首次启动与扫码配网
 
-```text
-Ubuntu 24.04 -> psutil 采样 -> 127.0.0.1:8765 -> Nginx HTTPS
-                                                  |
-                                  Wi-Fi -> server_monitor_task
-                                                  |
-                              有界 JSON -> ServerState 互斥锁
-                                                  |
-                              monitor_ui -> LVGL 锁 -> 屏幕
-```
+没有有效 NVS 配置时自动启动；长按 OK 可重新进入。二维码连接随机密码 WPA2 临时热点
+`fl0AT-Passport-XXXX`，只含临时 AP 凭据。若手机未自动弹出页面，打开 `http://192.168.4.1`。
 
-设备不使用 SSH，仅通过带认证的 HTTPS GET 读取指标。配网页面仅存在于临时 WPA2 热点。
+页面包含可用网络、SSID/密码、服务器 Host、WSS/HTTPS URL、API Token、设备名称、POSIX
+时区与默认音量。支持 2.4 GHz WPA2 兼容网络，Token 32–128 字符。Save & Connect 验证并
+提交单个 NVS blob，再关闭门户并连接 STA。保存失败保留旧设置；五分钟超时，最多一部手机。
+屏幕不显示已保存密码与 Token，临时热点密码只在二维码内。配置 POST 使用会话 nonce。
+DNS 只回答 AP 子网，配网期间 STA 断开。迁移旧配置不删除旧 blob，不自动擦除 NVS。
 
-## Screenshots / UI placeholder
+## 页面与按键
 
-黑底白字，四个固定页面和 Settings。[布局示意](assets/images/server-monitor-preview.svg)
-供设计审核，并非真机截图；实际显示仍待人工批准后的真机验证。
+黑白终端风格，绿黄红指示，固定控件，更新不重建屏幕。ASCII 字体不依赖 Emoji/中文字形。
 
 | 页面 | 内容 |
 | --- | --- |
-| Overview | CPU/RAM/DISK 百分比、进度条、NORMAL/WARNING/CRITICAL；RX/TX、运行时长、更新年龄 |
-| System | CPU 使用率、可空温度、Load 1/5/15、RAM 已用/总量/百分比 |
-| Network + Storage | 磁盘已用/总量/百分比、RX/TX、HTTPS API 延迟 |
-| Services | Nginx/MariaDB/PHP-FPM，本机 SSID、RSSI、CW2017 电量 |
-| Settings | SSID、RSSI、API Host、固件版本、电量、重连、配网 |
+| Overview | CPU/RAM/Disk、RX/TX、运行时间、连接、RSSI、电量 |
+| Performance | CPU/RAM、可空温度、负载、两分钟趋势 |
+| Network | 速率、HTTPS 延迟、RSSI、WSS 消息年龄、重连数 |
+| Services | Nginx/MariaDB/PHP-FPM、最新告警 |
+| Device | 电池、固件、运行时间、Heap、Wi-Fi、IP |
+| Settings | Network/Audio/Display/Power/Update/Diagnostics |
 
-UP/DOWN 翻页；OK 短按立即刷新（最快每秒一次）；OK 长按进入或退出 Settings。
-Settings 中 UP/DOWN 选择，OK 执行。临时配网期间才显示热点 setup key；
-保存的家庭 Wi-Fi 密码和 API Token 不显示、不记录。无数据使用 `--`，不可用使用 `N/A`。
-CPU/RAM 达到 70% 警告，磁盘达到 80% 警告，全部达到 90% 严重；颜色同时配合数值和文字。
-网络单位为十进制 B/s、KB/s、MB/s；存储为二进制 GiB；API 延迟不是 ICMP ping。
+UP/DOWN 切页，OK 请求备用刷新；长按 DOWN 打开设置，长按 UP 静音，长按 OK 配网。
+设置中 DOWN 选择、OK 应用、UP 返回；设置主列表末尾再按 DOWN 返回 Overview。
+音量每次 +10，100 后回到 0。屏幕 dim/off 后首个按键只唤醒。亮度 10–100%，超时
+Never/30s/1m/5m/10m。Live 熄屏保留 WSS，Balanced 调暗为 10% 保留 WSS，Battery Saver
+环境模式断开 WSS、每 60 秒 HTTPS。这里不进入深睡眠。
 
-## Build / Firmware Build
+## 音频和告警
 
-使用 **ESP-IDF 5.5.3**。Linux/macOS 激活环境后运行：
+17 段本机离线合成中文语音放 SPIFFS VoiceFS，16 kHz 单声道 G.711 μ-law，原始总大小
+754,080 字节。每次解码 256 字节为 512 字节 PCM，通过 BSP 设置 ES8311 播放音量。
+设备无 TTS、不把巨大 PCM 数组编译进 app。[资源说明](docs/assets/server-monitor-architecture.zh_CN.md)。
+
+独立任务处理 INFO/WARNING/CRITICAL 有界队列；高优先级清理低优先级等待队列并在下一
+16 ms 分块抢占。普通冷却 30 秒，严重 60 秒。首次同步每次启动只播一次，正常快照静默。
+持久化 Voice、音量、启动/网络/服务器/严重分类、提示音与严重告警绕过静音，绕过默认 OFF。
+CPU/RAM/Disk >=90% 边沿触发，低于 90% 重新布防。服务器告警显示消息并按严重度播报。
+
+## OTA 与诊断
+
+两个 3 MB OTA 槽、NVS、OTA Data、VoiceFS、Coredump 均位于 8 MB 内。
+[架构与分区分析](docs/assets/server-monitor-architecture.zh_CN.md) 描述迁移及内存预算。
+Settings / Update 获取配置 API 同源的 `/firmware/manifest.json`，选择更新后需在设备上
+再次按 OK 确认。manifest 包含 version、同源 HTTPS app-only URL、SHA256、size。
+下载前暂停 WSS，校验 TLS、大小、SHA256、ESP 镜像/芯片/项目与版本后才切换启动分区。
+版本格式 major.minor.patch 或 major.minor.patch-beta.N，只接受更新版本，不跟随重定向。
+新固件须通过 NVS、Display/UI 进度、network task 自检才 mark valid，启用 IDF rollback。
+旧 factory 分区首次迁移必须另外授权更新分区表，普通 app-only OTA 不能完成；OTA 不更新 VoiceFS。
+
+诊断显示版本、运行时间、free/minimum heap、最大块、RSSI/IP、WSS 年龄/状态、API 延迟、
+重连、服务器、错误、音频队列/错误、丢失事件。Coredump/私有日志可能包含秘密，只保留本地。
+本任务没有向实际服务器部署 manifest 或 binary。
+
+## 构建验证
+
+ESP-IDF **5.5.3**，LVGL **9.5.0**，WebSocket **1.6.1**。版本统一来自 [version.txt](version.txt)。
 
 ```sh
 python -m pip install -r server/requirements.txt
 ./tools/validate.sh --static
 ./tools/validate.sh --firmware
-sha256sum build/FoloToy-AI-Passport-full.bin
+./tools/validate.sh
 ```
 
-Windows 先激活 ESP-IDF PowerShell，再通过 Git Bash 调用同一入口。
-Windows 适配器执行相同的 build、merge、布局验证、调试归档流程，每次使用新的
-`build/validation-时间戳/sdkconfig`，保留编译目录供审查。项目及 IDF 路径应无空格，
-可使用 Windows 盘符别名。主机测试需要 `CC`、安装 psutil 的 Python 和 actionlint。
-固件阶段使用激活的 IDF Python。
+Windows 在激活 IDF 的环境中通过 Git Bash 使用同一入口，并提供 CC/actionlint/Python。
+官方 gate 从 tracked defaults 在全新目录编译、合并、校验分区范围/字节/ELF 身份并归档到
+`build/firmware/<SHA256>/`，输出 `build/FoloToy-AI-Passport-full.bin`。
+用 `python tools/archive_firmware.py verify <bundle>` 核验；独立 voicefs.bin 留在 validation
+目录，合并镜像也包含它。二进制、ELF、MAP、私有配置只留本地；CI 完整验证且不上传固件。
 
-配置来自跟踪的 `sdkconfig.defaults`，不读取被忽略的本机 sdkconfig。
-产物是 `build/FoloToy-AI-Passport-full.bin`；对应 ELF、MAP、应用、bootloader、
-分区表和 `flash_args` 保存在 `build/firmware/<SHA256>/`。
-用 `python tools/archive_firmware.py verify <bundle>` 校验归档。
-保持官方 8 MB NVS/PHY/factory 分区布局，无 OTA。固件和调试文件不进 Git，不由 CI 上传。
-[CI](.github/workflows/build.yml) 固定 ESP-IDF 5.5.3，只运行编译验证，不发布 Release。
+主机测试覆盖 JSON 缺失/null/非法类型、分片、状态保留/通道切换、告警边沿、音频冷却/优先级、
+边界/趋势/格式化、版本/manifest、音频解码与 HTTP/WSS 认证/广播。
+**Hardware validation pending.** 屏幕可读性、扫码、音质、TLS+音频并发 heap、栈水位、
+真实 Wi-Fi 故障、OTA 断电/回滚、电池续航仍待真机验证。
 
-## Server Agent / Nginx / API
+## 安全和发布
 
-参阅 [Ubuntu 部署指南](server/README.zh_CN.md)。Python Agent 必须非 root 运行，
-独立采样，只提供 `GET /api/v1/status`。Nginx 使用有效公共 CA 证书提供 HTTPS。
-JSON 响应设置 `Cache-Control: no-store`，认证为 `Authorization: Bearer <TOKEN>`。
-Token 通过 `/etc/passport-status.env` 读取，不编入固件。
-[完整 API 示例](server/status.example.json) 使用 version 1，CPU 温度允许 `null`。
-电量和 RSSI 由设备本地读取。
+无内置 Wi-Fi 密码、API Token、私钥；TLS 验证始终开启，监控前等待 SNTP。
+JSON 上限 4096 字节，检查深度/类型/范围/重复键。未知消息不能执行命令。
+NVS 原子提交，但 beta 未启用加密，物理读 Flash 可暴露凭据。安全启动/eFuse/加密配置不在此次范围。
 
-## Wi-Fi Setup / 配网
+每次 commit/push 前运行 `python tools/check_repo.py` 和 `python tools/check-monitor-secrets.py`，
+检查 staged diff。GitHub 只发源码 **Pre-release**，不上传固件，见 [CHANGELOG](CHANGELOG.zh_CN.md)。
+**本阶段禁止烧录**：不 flash/erase/reset bootloader/连接串口/清除 NVS，后续必须明确授权。
 
-1. 启动直接进入 Server Monitor，从 NVS 加载已有 STA 凭据。
-2. 长按 OK，在 Settings 选择 **Wi-Fi Provisioning** 后按 OK。
-3. 用屏幕显示的临时 setup key 连接 `Passport-xxxx` WPA2 热点。
-4. 打开 `http://192.168.4.1`，填写 2.4 GHz WPA2/WPA3 兼容网络 SSID、
-   Wi-Fi 密码（8–63 字节）、HTTPS API URL 和随机 Token（32–128 字符）。
-5. 保存后查看设备是否成功；热点关闭，设备连接 STA、通过 SNTP 校时，再发起严格校验证书的 HTTPS。
+依赖解析完成后运行 `python tools/test-monitor-ui.py`，以合成数据、配置的 32 KiB LVGL 池
+和 BSP 大小局部缓冲渲染实际页面，PPM 输出位于 `build/ui-validation/`，不操作设备。
 
-热点仅容许一个客户端，5 分钟自动关闭。期间 STA 禁用，配网页面不会暴露到正常局域网。
-每个会话使用随机 nonce 防止跨站配置请求。验证后整体保存单个带版本的 NVS blob，
-失败保留旧设置；不会自动擦除 NVS。重新配网可替换设置。本版不支持开放网络或 64 位原始 PSK。
-
-## 可靠性与内存
-
-Wi-Fi 退避 2/4/8/16/30 秒，单次关联最多 20 秒。HTTPS 成功后每 5 秒刷新，
-失败退避 5/10/20/30/60 秒。HTTP I/O 约 3 秒超时，独立 socket 截止任务中断慢响应头和响应体。
-DNS 使用 IDF/lwIP 解析器，可能超过 HTTP I/O 时限，但不会阻塞 LVGL 或按键。
-
-最近成功接收未超过 15 秒为 ONLINE；之后为 STALE 并保留全部旧数据；从未获取有效
-数据为 OFFLINE。更换 API 配置会清空上一端点数据。未知字段忽略，必需字段缺失或错误
-会原子拒绝整个响应；拒绝超过 4096 字节、嵌套超过 8 层、重复字段、非有限数值、
-越界百分比，以及落后当前时间超过 15 秒或超前超过 30 秒的时间戳。温度 `null` 合法。
-
-控件仅创建一次，复用静态 label 缓冲和三个 bar。BSP 显示缓冲约 9.6 KB，LVGL 池 24 KB，
-无完整 framebuffer 或 PSRAM。JSON 静态缓冲 4097 字节。任务栈：HTTPS 8192、
-Wi-Fi 5120、UI 4096、电池/遥测 3072、截止保护 2048 字节；配网 HTTP 仅活动期间使用 6144 字节栈。
-每 30 秒记录空闲堆、最低空闲堆、最大连续块。运行时内存及栈水位仍需真机测量，
-不能仅凭链接器 RAM 数字宣称稳定。
-
-## Security / 安全
-
-使用 `esp_crt_bundle_attach`、正常域名验证和 SNTP 时间；不禁用证书验证。
-拒绝重定向，避免把 Authorization 转给其他主机。API URL 必须 HTTPS，不能含
-用户信息、查询参数或 fragment。设备无 SSH、服务器命令执行或远程控制接口。
-Agent 只以参数数组和限时查询固定 systemd 单元，不启停服务，拒绝 root 运行。
-
-`.gitignore` 排除凭据、私有配置、密钥、证书、构建和日志，example 仅含占位值。
-提交/推送前执行 `python tools/check_repo.py`、`python tools/check-monitor-secrets.py`
-并审查 `git diff --cached`。不要把 Token 放入 URL 或 shell 历史。
-开发版本 NVS 未加密，物理读取 Flash 可能获取凭据；Secure Boot、Flash/NVS 加密
-和 Token 轮换属于后续部署决策，本轮不会改变设备安全状态。
-
-## Flash / 烧录
-
-**当前未获准烧录。** 本轮仅构建、验证、提交并推送源码，然后停止，等待人工审核。
-不探测串口、不重启、不擦除、不烧录。只有后续明确说“可以烧录”才能进行设备写入。
-合并镜像用于偏移 `0x0`，写入可能替换 NVS 数据，未来烧录前需要核对设备与存储影响。
-详见官方 [分区策略](docs/development/engineering/firmware-layout.zh_CN.md)。
-
-## Troubleshooting / 排查
-
-- Wi-Fi 断线：检查 2.4 GHz、密码和 RSSI，Settings 重连或配网。
-- 等待校时：检查互联网和 UDP/123，TLS 不会绕过验证。
-- HTTPS/TLS/DNS：检查 DNS、证书链、到期时间和域名。
-- HTTP 401：核对或轮换两端 Token；404：检查路径。
-- HTTP 500/503：检查 Nginx、`journalctl -u passport-status` 和采样配置。
-- JSON 错误：核对 version 1 结构和大小；VPS 温度 N/A 正常。
-- 电量 N/A：获准真机测试后通过官方 BSP 检查 CW2017。
-- NVS 保存失败：检查存储，不会自动擦除或进入重启循环。
-
-## License / 许可证
-
-MIT，完整保留 FoloToy 版权声明和 [LICENSE](LICENSE)。
-官方项目：[FoloToy/ai-passport](https://github.com/FoloToy/ai-passport)。
+![实际 LVGL 主机渲染；合成数据，非真机照片](assets/images/server-monitor-v020-preview.png)

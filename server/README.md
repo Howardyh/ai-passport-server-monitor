@@ -57,7 +57,7 @@ in the normal Nginx `http` context. Test with `sudo nginx -t` before reloading.
 Do not open port 8765 in the firewall. The agent binds only **127.0.0.1:8765**;
 the address is fixed in source and cannot be configured as 0.0.0.0.
 
-The example exposes only `GET /api/v1/status` over TLS 1.2/1.3, forwards the
+The example exposes `GET /api/v1/status` and WebSocket `/ws` over TLS 1.2/1.3, forwards the
 Authorization header, disables caching/access logs, sets timeouts and limits
 request rate. It does not redirect HTTP. Use a hostname covered by the device's
 CA bundle; never weaken verification for self-signed certificates.
@@ -66,7 +66,7 @@ CA bundle; never weaken verification for self-signed certificates.
 
 `GET /api/v1/status`, header `Authorization: Bearer <TOKEN>`.
 Responses use `application/json`, `Cache-Control: no-store`.
-See [status.example.json](status.example.json). Version 1 includes timestamp,
+See [status.example.json](status.example.json). Protocol 1 includes v=1, type=status, seq, timestamp,
 hostname, uptime, CPU usage/load/nullable temperature, memory and disk totals,
 network counters and rates, and three service booleans. RX/TX rates are **bytes
 per second**, derived using monotonic elapsed time; counter resets clamp to 0.
@@ -77,8 +77,11 @@ percent follows psutil and may account for filesystem reserved space.
 Sampling runs once per second independently of requests; unit states refresh
 every five seconds. Sampling errors preserve the cached sample, but samples
 older than ten seconds produce 503. The device independently checks timestamps.
-HTTP handling uses a bounded single listener with a two-second client timeout.
-It never spawns a new process for each HTTP request. Nginx terminates public TLS.
+aiohttp serves REST and at most 16 WSS clients from the same cache. WSS broadcasts
+every two seconds, sends edge-triggered CPU/RAM/disk alerts, and uses 20-second
+heartbeat. Nginx forwards Upgrade/Connection with a 65-second read timeout.
+Authorization is required before upgrade; tokens in queries are rejected.
+No request creates a sampling process. Nginx terminates public TLS.
 
 | Code | Meaning |
 | --- | --- |
@@ -90,7 +93,7 @@ It never spawns a new process for each HTTP request. Nginx terminates public TLS
 
 ## Validation and troubleshooting
 
-From the repository root, run `python tests/test_status_agent.py` with psutil
+From the repository root, run `python tests/test_status_agent.py` with psutil and aiohttp
 installed. Tests use a temporary loopback port, synthetic credentials and mocked
 Linux metrics; they do not configure a real server. Verify deployment later:
 non-root UID, loopback binding, valid certificate/hostname, 401 without auth,

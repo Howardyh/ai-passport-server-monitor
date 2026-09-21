@@ -4,7 +4,9 @@
 
 # Firmware Layout
 
-This repository is a minimal base for user-defined firmware targeting an
+This Server Monitor fork overrides the upstream factory layout described below. Its authoritative current layout is [partitions.csv](../../../partitions.csv); see the [dual-OTA/VoiceFS analysis](../../assets/server-monitor-architecture.md).
+
+The upstream repository is a minimal base for user-defined firmware targeting an
 ESP32-C3 with 8 MB Flash. Its default does not reserve product-specific
 identity, OTA, or unused data partitions.
 

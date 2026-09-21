@@ -6,7 +6,7 @@ from pathlib import PurePosixPath
 
 files = subprocess.check_output(["git", "ls-files", "--cached", "-z"]).decode().split("\0")
 patterns = (
-    re.compile(r"(?:ghp_|github_pat_)[A-Za-z0-9_]{20,}"),
+    re.compile(r"(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{20,}"),
     re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
     re.compile(r"(?i)Bearer[ \t]+[A-Za-z0-9._~+/=-]{20,}"),
     re.compile(r"(?im)^\s*(?:PASSPORT_STATUS_TOKEN|WIFI_PASSWORD)\s*=\s*(?!PLACEHOLDER\s*$|YOUR_[A-Z_]+\s*$)([^\r\n]{8,})"),

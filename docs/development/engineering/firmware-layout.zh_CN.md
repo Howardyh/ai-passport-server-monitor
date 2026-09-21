@@ -4,6 +4,8 @@
 
 # 固件布局
 
+本 Server Monitor 分支已覆盖下方上游 factory 参考布局。当前以 [partitions.csv](../../../partitions.csv) 和[双 OTA/VoiceFS 分析](../../assets/server-monitor-architecture.zh_CN.md)为准。
+
 本仓库是供用户自定义固件使用的最小基础示例，目标为带 8 MB Flash 的
 ESP32-C3。默认布局不预留产品专用身份、OTA 或未使用的数据分区。
 

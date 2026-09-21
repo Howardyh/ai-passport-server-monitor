@@ -6,7 +6,7 @@
 #include <string.h>
 
 static const char valid[] =
-"{\"version\":1,\"timestamp\":1790000000,\"hostname\":\"server\",\"uptime\":123456,"
+"{\"v\":1,\"type\":\"status\",\"seq\":1,\"timestamp\":1790000000,\"hostname\":\"server\",\"uptime\":123456,"
 "\"cpu\":{\"usage\":23.4,\"load1\":0.53,\"load5\":0.38,\"load15\":0.29,\"temperature\":null},"
 "\"memory\":{\"total\":4096000000,\"used\":2100000000,\"percent\":51.3},"
 "\"disk\":{\"total\":100000000000,\"used\":45000000000,\"percent\":45},"
@@ -30,7 +30,7 @@ int main(void) {
     server_state_age(&state, 16000); assert(state.status == SERVER_ONLINE);
     server_state_age(&state, 16001); assert(state.status == SERVER_STALE && state.cpu_usage > 23);
     state.has_data = false; server_state_age(&state, 17000); assert(state.status == SERVER_OFFLINE);
-    const char *top[] = {"version", "timestamp", "hostname", "uptime", "cpu", "memory", "disk", "network", "services"};
+    const char *top[] = {"v", "type", "seq", "timestamp", "hostname", "uptime", "cpu", "memory", "disk", "network", "services"};
     for (size_t i = 0; i < sizeof(top)/sizeof(top[0]); i++) {
         cJSON *root = cJSON_Parse(valid); cJSON_DeleteItemFromObjectCaseSensitive(root, top[i]); rejected(root);
     }
@@ -42,7 +42,9 @@ int main(void) {
             cJSON *root = cJSON_Parse(valid), *obj = cJSON_GetObjectItemCaseSensitive(root, groups[i]);
             cJSON_ReplaceItemInObjectCaseSensitive(obj, item->string, cJSON_CreateString("invalid")); rejected(root);
             root = cJSON_Parse(valid); obj = cJSON_GetObjectItemCaseSensitive(root, groups[i]);
-            cJSON_DeleteItemFromObjectCaseSensitive(obj, item->string); rejected(root);
+            cJSON_DeleteItemFromObjectCaseSensitive(obj, item->string);
+            if(!strcmp(item->string,"temperature")) {char *j=cJSON_PrintUnformatted(root);assert(server_state_parse(j,strlen(j),&state)&&!state.temperature_valid);cJSON_free(j);cJSON_Delete(root);}
+            else rejected(root);
         }
         cJSON_Delete(template);
     }
@@ -53,7 +55,7 @@ int main(void) {
     }
     cJSON *root = cJSON_Parse(valid);
     cJSON_ReplaceItemInObjectCaseSensitive(cJSON_GetObjectItem(root,"memory"), "used", cJSON_CreateNumber(1e12)); rejected(root);
-    root = cJSON_Parse(valid); cJSON_AddNumberToObject(root, "version", 1); rejected(root);
+    root = cJSON_Parse(valid); cJSON_AddNumberToObject(root, "v", 1); rejected(root);
     root = cJSON_Parse(valid);
     cJSON_ReplaceItemInObjectCaseSensitive(cJSON_GetObjectItem(root,"cpu"), "temperature", cJSON_CreateNumber(51.2));
     char *json = cJSON_PrintUnformatted(root);

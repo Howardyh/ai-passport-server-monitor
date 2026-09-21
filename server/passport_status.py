@@ -13,7 +13,8 @@ import socket
 import subprocess
 import threading
 import time
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import asyncio
+from aiohttp import web
 
 import psutil
 
@@ -95,6 +96,7 @@ class Collector:
         self.previous_at = time.monotonic()
         self.services = {name: False for name in self.units}
         self.next_services = 0.0
+        self.seq = int(time.time()*1000)
         psutil.cpu_percent(interval=None)  # prime measurement on the sampling thread
 
     def sample(self) -> dict:
@@ -113,8 +115,9 @@ class Collector:
         hostname = socket.gethostname()
         hostname = "".join(ch if 32 <= ord(ch) < 127 else "?" for ch in hostname)[:63] or "server"
         # RAM used matches the utilization percentage (total minus available).
+        self.seq += 1
         return {
-            "version": 1, "timestamp": int(time.time()), "hostname": hostname,
+            "v": 1, "type": "status", "seq": self.seq, "timestamp": int(time.time()), "hostname": hostname,
             "uptime": max(0, int(time.time() - psutil.boot_time())),
             "cpu": {"usage": psutil.cpu_percent(interval=None), "load1": load1, "load5": load5,
                     "load15": load15, "temperature": cpu_temperature()},
@@ -158,53 +161,109 @@ def collect(config: dict[str, str], snapshot: Snapshot, stop: threading.Event) -
         stop.wait(1)
 
 
-def handler_for(token: str, snapshot: Snapshot):
+class AlertEngine:
+    def __init__(self):
+        self.active = set()
+        self.seq = int(time.time()*1000)
+
+    def edges(self, data):
+        values = {"cpu": data["cpu"]["usage"], "ram": data["memory"]["percent"], "disk": data["disk"]["percent"]}
+        next_active = {name for name, value in values.items() if value >= 90}
+        alerts = []
+        for name in sorted(next_active - self.active):
+            self.seq = max(self.seq+1, data["seq"]+1)
+            alerts.append({"v": 1, "type": "alert", "seq": self.seq, "timestamp": data["timestamp"],
+                           "level": "critical", "source": name, "value": values[name], "message": name.upper()+" HIGH"})
+        self.active = next_active
+        return alerts
+
+
+def make_app(token: str, snapshot: Snapshot, *, push_interval=2.0):
+    if not TOKEN_RE.fullmatch(token):
+        raise ValueError("Invalid bearer configuration")
     expected = ("Bearer " + token).encode("ascii")
+    clients = set()
+    reservations = 0
+    engine = AlertEngine()
 
-    class Handler(BaseHTTPRequestHandler):
-        server_version = "PassportStatus/1"
-        sys_version = ""
+    @web.middleware
+    async def authentication(request, handler):
+        headers = request.headers.getall("Authorization", [])
+        supplied = headers[0].encode("utf-8") if len(headers) == 1 else b""
+        if len(supplied) > 256 or not hmac.compare_digest(supplied, expected):
+            return web.json_response({"error": "unauthorized"}, status=401, headers={"Cache-Control": "no-store", "WWW-Authenticate": "Bearer"})
+        if request.query_string:
+            return web.json_response({"error": "query_not_supported"}, status=404)
+        return await handler(request)
 
-        def setup(self):
-            self.request.settimeout(2)
-            super().setup()
+    async def status(request):
+        body = snapshot.read()
+        if body is None:
+            return web.json_response({"error": "status_unavailable"}, status=503, headers={"Cache-Control": "no-store"})
+        return web.Response(body=body, content_type="application/json", headers={"Cache-Control": "no-store"})
 
-        def log_message(self, fmt, *args):
-            pass  # No request path, Authorization header, or query is logged.
-
-        def reply(self, code: int, body: bytes):
-            self.send_response(code)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Cache-Control", "no-store")
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Connection", "close")
-            if code == 401:
-                self.send_header("WWW-Authenticate", "Bearer")
-            if code == 405:
-                self.send_header("Allow", "GET")
-            self.end_headers()
-            if self.command != "HEAD":
-                self.wfile.write(body)
-            self.close_connection = True
-
-        def do_GET(self):
-            headers = self.headers.get_all("Authorization", [])
-            provided = headers[0].encode("utf-8") if len(headers) == 1 else b""
-            if len(provided) > 256 or not hmac.compare_digest(provided, expected):
-                self.reply(401, b'{"error":"unauthorized"}')
-                return
-            if self.path != "/api/v1/status":
-                self.reply(404, b'{"error":"not_found"}')
-                return
+    async def websocket(request):
+        nonlocal reservations
+        if reservations >= 16:
+            return web.json_response({"error": "client_limit"}, status=503)
+        ws = web.WebSocketResponse(heartbeat=20, receive_timeout=35, max_msg_size=4096, compress=False)
+        reservations += 1
+        try:
+            await ws.prepare(request)
+            clients.add(ws)
             body = snapshot.read()
-            self.reply(200, body) if body is not None else self.reply(503, b'{"error":"status_unavailable"}')
+            if body is not None:
+                await asyncio.wait_for(ws.send_str(body.decode("utf-8")), timeout=3)
+            async for msg in ws:
+                if msg.type in (web.WSMsgType.TEXT, web.WSMsgType.BINARY):
+                    await ws.close(code=1008, message=b"read-only protocol")
+        except (TimeoutError, ConnectionError, RuntimeError):
+            pass
+        finally:
+            clients.discard(ws)
+            reservations -= 1
+        return ws
 
-        def reject(self):
-            self.reply(405, b'{"error":"method_not_allowed"}')
+    async def send(ws, messages):
+        try:
+            for message in messages:
+                await asyncio.wait_for(ws.send_str(message), timeout=3)
+        except (TimeoutError, ConnectionError, RuntimeError):
+            clients.discard(ws)
+            try:
+                await asyncio.wait_for(ws.close(), timeout=1)
+            except (TimeoutError, ConnectionError, RuntimeError):
+                pass
 
-        do_POST = do_PUT = do_DELETE = do_PATCH = do_HEAD = do_OPTIONS = reject
+    async def broadcast():
+        last_seq = None
+        while True:
+            body = snapshot.read()
+            if body is not None:
+                data = json.loads(body)
+                if data["seq"] != last_seq:
+                    last_seq = data["seq"]
+                    messages = [body.decode("utf-8")]
+                    messages += [json.dumps(a, separators=(",", ":"), allow_nan=False) for a in engine.edges(data)]
+                    # Sampling is shared; clients only receive the cached serialized snapshot.
+                    await asyncio.gather(*(send(ws, messages) for ws in tuple(clients)))
+            await asyncio.sleep(push_interval)
 
-    return Handler
+    async def lifecycle(app):
+        task = asyncio.create_task(broadcast())
+        yield
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        await asyncio.gather(*(ws.close(code=1001, message=b"shutdown") for ws in tuple(clients)))
+
+    app = web.Application(middlewares=[authentication], client_max_size=1024)
+    app.router.add_get("/api/v1/status", status, allow_head=False)
+    app.router.add_get("/ws", websocket, allow_head=False)
+    app.cleanup_ctx.append(lifecycle)
+    return app
 
 
 def main() -> None:
@@ -217,16 +276,12 @@ def main() -> None:
         raise SystemExit("Cannot load valid settings from /etc/passport-status.env") from None
     snapshot, stop = Snapshot(), threading.Event()
     thread = threading.Thread(target=collect, args=(config, snapshot, stop), daemon=True, name="sampler")
-    server = HTTPServer(("127.0.0.1", 8765), handler_for(config["PASSPORT_STATUS_TOKEN"], snapshot))
     thread.start()
-    LOG.info("Listening on 127.0.0.1:8765")
     try:
-        server.serve_forever(poll_interval=0.5)
-    except KeyboardInterrupt:
-        pass
+        web.run_app(make_app(config["PASSPORT_STATUS_TOKEN"], snapshot), host="127.0.0.1", port=8765,
+                    access_log=None, print=None)
     finally:
         stop.set()
-        server.server_close()
         thread.join(timeout=5)
 
 

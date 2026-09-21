@@ -71,7 +71,8 @@ bool server_state_parse(const char *json, size_t length, server_state_t *output)
     const cJSON *cpu = field(root, "cpu"), *mem = field(root, "memory");
     const cJSON *disk = field(root, "disk"), *net = field(root, "network"), *services = field(root, "services");
     bool ok = end == json + length && cJSON_IsObject(root) && unique_keys(root) &&
-        number(root, "version", 1, 1, &version) && integer(root, "timestamp", &s.timestamp) && s.timestamp > 0 &&
+        number(root, "v", 1, 1, &version) && integer(root, "seq", &s.seq) &&
+        cJSON_IsString(field(root,"type")) && !strcmp(field(root,"type")->valuestring,"status") && integer(root, "timestamp", &s.timestamp) && s.timestamp > 0 &&
         integer(root, "uptime", &s.uptime) && cJSON_IsString(host) && host->valuestring &&
         strlen(host->valuestring) > 0 && strlen(host->valuestring) < sizeof(s.hostname) &&
         real(cpu, "usage", 0, 100, &s.cpu_usage) && real(cpu, "load1", 0, 100000, &s.load1) &&
@@ -85,7 +86,7 @@ bool server_state_parse(const char *json, size_t length, server_state_t *output)
         boolean(services, "nginx", &s.service_nginx) && boolean(services, "mariadb", &s.service_mariadb) &&
         boolean(services, "php_fpm", &s.service_php_fpm);
     const cJSON *temp = field(cpu, "temperature");
-    if (cJSON_IsNull(temp)) s.temperature_valid = false;
+    if (!temp || cJSON_IsNull(temp)) s.temperature_valid = false;
     else { s.temperature_valid = true; ok = ok && real(cpu, "temperature", -100, 250, &s.cpu_temperature); }
     if (ok) {
         /* The built-in font is ASCII. Reject control bytes; render UTF-8 host bytes safely. */
@@ -102,7 +103,8 @@ bool server_state_parse(const char *json, size_t length, server_state_t *output)
 }
 void server_state_age(server_state_t *s, uint64_t now_ms) {
     s->status = !s->has_data ? SERVER_OFFLINE :
-        (now_ms >= s->last_update && now_ms - s->last_update > 15000 ? SERVER_STALE : SERVER_ONLINE);
+        (now_ms >= s->last_update && now_ms - s->last_update > 60000 ? SERVER_OFFLINE :
+         now_ms >= s->last_update && now_ms - s->last_update > 15000 ? SERVER_STALE : SERVER_ONLINE);
     s->online = s->status == SERVER_ONLINE;
 }
 unsigned server_retry_seconds(unsigned failures) {
@@ -132,4 +134,15 @@ bool server_url_valid(const char *url) {
     if (*p != '/') return false;
     for (; *p; p++) if ((unsigned char)*p <= 32 || (unsigned char)*p >= 127 || strchr("?#@\\", *p)) return false;
     return true;
+}
+
+bool server_should_poll(unsigned failures,bool saver) {return saver||failures>=3;}
+bool server_state_commit(server_state_t *state,const server_state_t *fresh,connection_mode_t mode,uint64_t now) {
+    if(!fresh->has_data || (state->has_data && (fresh->timestamp<state->timestamp ||
+       (fresh->timestamp==state->timestamp&&fresh->seq<=state->seq)))) return false;
+    server_state_t next=*fresh;next.connection_mode=mode;next.last_update=now;
+    next.reconnect_count=state->reconnect_count;next.wss_last_rx=mode==LIVE_WSS?now:state->wss_last_rx;
+    if(mode==LIVE_WSS) next.latency_ms=state->latency_ms;
+    memcpy(next.alert_message,state->alert_message,sizeof(next.alert_message));next.alert_level=state->alert_level;
+    *state=next;return true;
 }

@@ -19,4 +19,4 @@ jobs:
         with:
           esp_idf_version: v5.5.3
           target: esp32c3
-          command: ./tools/validate.sh --firmware
+          command: python -m pip install -r server/requirements.txt && ./tools/validate.sh

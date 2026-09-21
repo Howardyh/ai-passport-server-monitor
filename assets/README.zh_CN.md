@@ -43,3 +43,7 @@
 ## Server Monitor 设计示意
 
 `images/server-monitor-preview.svg` 是代码生成的布局示意，使用模拟指标，并非真机截图。此原创项目资源遵循仓库 MIT 许可证，仅用于根 README，不在固件中创建图片缓冲。
+
+- [Server Monitor voice clips and format](../docs/assets/server-monitor-architecture.zh_CN.md): `assets/music/server-monitor/*.ulaw`, `phrases.json`.
+
+- `images/server-monitor-v020-preview.png`: generated from actual LVGL UI using `tools/test-monitor-ui.py`, synthetic demonstration values.

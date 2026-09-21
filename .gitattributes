@@ -9,3 +9,8 @@ sdkconfig.defaults text eol=lf
 *.yml text eol=lf
 *.json text eol=lf
 CMakeLists.txt text eol=lf
+
+# Compressed audio must never undergo text/line-ending conversion.
+*.ulaw binary
+*.wav binary
+*.png binary

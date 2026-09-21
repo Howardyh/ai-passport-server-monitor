@@ -60,7 +60,7 @@ RX/TX 单位是**字节/秒**，基于单调时间差计算，计数器复位时
 磁盘百分比沿用 psutil，可能计入文件系统保留空间影响。
 
 指标每秒独立采样，服务状态每 5 秒更新。采样异常保留缓存，但超过 10 秒即返回 503；
-设备也会检查时间戳。HTTP 使用单个有界监听器、客户端 2 秒超时，不为每次请求启动新进程。
+设备也会检查时间戳。aiohttp 的 REST/WSS 使用同一缓存，最多 16 个 WSS 客户端，发送有超时，不为每个请求启动采样进程。
 公网 TLS 由 Nginx 处理。
 
 | 状态码 | 含义 |
@@ -81,3 +81,11 @@ PHP-FPM 显示 false 时检查实际 PHP 版本和配置的单元名。
 
 Token 轮换需更新 `/etc/passport-status.env`、重启 Agent 并重新配置设备。
 这是只读状态 API，不是服务器管理入口，禁止给服务账户 sudo 权限。
+
+## v0.2.0-beta.1 WSS 协议升级
+
+Agent 使用 aiohttp，同一个最新缓存供 GET /api/v1/status 与 /ws，仍只绑定 127.0.0.1:8765。
+每秒采样、每两秒广播，最多 16 个客户端，不为每个请求重新采样。协议为 v=1/type=status/seq/
+timestamp；CPU/RAM/Disk >=90% 推送边沿 alert。WebSocket 在 upgrade 前验证 Bearer header，
+禁止 query Token/重复认证头。20 秒心跳，Nginx 转发 Upgrade/Connection，65 秒读超时。
+运行测试前安装 requirements.txt 内的 psutil 与 aiohttp。本次未部署真实服务器/OTA manifest。

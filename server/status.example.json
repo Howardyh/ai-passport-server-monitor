@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "v": 1, "type": "status", "seq": 10482,
   "timestamp": 1790000000,
   "hostname": "server",
   "uptime": 123456,

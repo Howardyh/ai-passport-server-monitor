@@ -5,7 +5,7 @@ typedef struct {
     bool connected, provisioning;
     int rssi;
     uint32_t revision;
-    char ssid[33], api_host[96], message[40];
+    char ssid[33], api_host[96], message[40], ip[16];
     char setup_ssid[33], setup_key[17]; /* ephemeral AP key, never saved Wi-Fi password */
     unsigned setup_seconds;
 } monitor_wifi_view_t;

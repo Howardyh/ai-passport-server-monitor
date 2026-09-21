@@ -45,3 +45,7 @@ Store reusable music and sound-effect sources in `music/`.
 ## Server Monitor design preview
 
 `images/server-monitor-preview.svg` is a code-generated layout illustration with synthetic metrics, not a device screenshot. It is an original project asset under the repository MIT license, used only in the root README; no firmware image buffer is created.
+
+- [Server Monitor voice clips and format](../docs/assets/server-monitor-architecture.md): `assets/music/server-monitor/*.ulaw`, `phrases.json`.
+
+- `images/server-monitor-v020-preview.png`: generated from actual LVGL UI using `tools/test-monitor-ui.py`, synthetic demonstration values.

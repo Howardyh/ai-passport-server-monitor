@@ -5,11 +5,17 @@
 
 #define SERVER_JSON_MAX 4096
 typedef enum { SERVER_OFFLINE, SERVER_ONLINE, SERVER_STALE } server_status_t;
+typedef enum { LIVE_WSS, HTTPS_POLLING, RECONNECTING, CONNECTION_OFFLINE } connection_mode_t;
 typedef struct {
     bool online, has_data, temperature_valid;
     server_status_t status;
     uint64_t last_update; /* monotonic milliseconds, never server wall time */
-    uint64_t timestamp, uptime;
+    uint64_t timestamp, uptime, seq;
+    connection_mode_t connection_mode;
+    uint32_t reconnect_count;
+    uint64_t wss_last_rx;
+    char alert_message[96];
+    int alert_level;
     uint32_t latency_ms;
     char hostname[64];
     float cpu_usage, load1, load5, load15, cpu_temperature;
@@ -28,3 +34,7 @@ unsigned server_retry_seconds(unsigned failures);
 unsigned wifi_retry_seconds(unsigned failures);
 bool server_url_valid(const char *url);
 const char *server_status_name(server_status_t status);
+
+/* Commit a newer snapshot atomically; preserve diagnostics/alerts across transports. */
+bool server_state_commit(server_state_t *state, const server_state_t *fresh, connection_mode_t mode, uint64_t now);
+bool server_should_poll(unsigned wss_failures, bool saver);

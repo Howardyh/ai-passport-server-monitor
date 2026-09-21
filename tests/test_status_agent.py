@@ -14,56 +14,79 @@ agent = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(agent)
 
 
-class AgentTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.token = secrets.token_urlsafe(32)  # ephemeral test fixture, never printed
-        cls.snapshot = agent.Snapshot()
-        cls.server = HTTPServer(("127.0.0.1", 0), agent.handler_for(cls.token, cls.snapshot))
-        cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
-        cls.thread.start()
+class AgentHTTPTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        from aiohttp.test_utils import TestClient, TestServer
+        self.token = secrets.token_urlsafe(32)
+        self.snapshot = agent.Snapshot()
+        self.snapshot.store({"v":1,"type":"status","seq":1,"timestamp":1790000000,"cpu":{"usage":10,"temperature":None},"memory":{"percent":20},"disk":{"percent":30}})
+        self.client = TestClient(TestServer(agent.make_app(self.token, self.snapshot, push_interval=0.02)))
+        await self.client.start_server()
+        self.headers = {"Authorization": "Bearer " + self.token}
 
-    @classmethod
-    def tearDownClass(cls):
-        cls.server.shutdown(); cls.server.server_close(); cls.thread.join()
+    async def asyncTearDown(self):
+        await self.client.close()
 
-    def request(self, method="GET", path="/api/v1/status", auth=True):
-        conn = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=3)
-        headers = {"Authorization": "Bearer " + self.token} if auth else {}
-        conn.request(method, path, headers=headers)
-        response = conn.getresponse()
-        result = response.status, dict(response.getheaders()), response.read()
-        conn.close()
-        return result
+    async def test_authentication(self):
+        for path in ("/ws", "/api/v1/status"):
+            response = await self.client.get(path)
+            self.assertEqual(response.status, 401)
+            self.assertEqual(response.headers["Cache-Control"], "no-store")
+            response = await self.client.get(path, headers=[("Authorization",self.headers["Authorization"])]*2)
+            self.assertEqual(response.status, 401)
 
-    def test_authentication(self):
-        status, headers, body = self.request(auth=False)
-        self.assertEqual(status, 401); self.assertEqual(headers["Cache-Control"], "no-store")
-        self.assertNotIn(self.token.encode(), body)
-
-    def test_route_and_read_only(self):
-        self.assertEqual(self.request(path="/wrong")[0], 404)
-        self.assertEqual(self.request(path="/api/v1/status?x=1")[0], 404)
+    async def test_routes(self):
+        for path in ("/wrong", "/ws?token=bad", "/api/v1/status?x=1"):
+            self.assertEqual((await self.client.get(path, headers=self.headers)).status, 404)
         for method in ("POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"):
-            self.assertEqual(self.request(method=method)[0], 405)
+            self.assertEqual((await self.client.request(method,"/api/v1/status",headers=self.headers)).status,405)
 
-    def test_snapshot_and_stale(self):
-        data = {"version":1,"cpu":{"temperature":None}}
-        self.snapshot.store(data)
-        status, headers, body = self.request()
-        self.assertEqual(status,200); self.assertEqual(json.loads(body), data)
-        self.assertEqual(headers["Content-Type"],"application/json")
-        self.assertEqual(headers["Cache-Control"],"no-store")
+    async def test_snapshot_stale_and_websocket(self):
+        response = await self.client.get("/api/v1/status",headers=self.headers)
+        self.assertEqual(response.status,200)
+        self.assertEqual(response.headers["Cache-Control"],"no-store")
+        expected = await response.json()
+        ws = await self.client.ws_connect("/ws",headers=self.headers)
+        self.assertEqual(await ws.receive_json(timeout=2),expected)
+        await ws.ping()
         self.snapshot.updated -= 11
-        self.assertEqual(self.request()[0],503)
+        self.assertEqual((await self.client.get("/api/v1/status",headers=self.headers)).status,503)
+        await ws.close()
+
+    async def test_broadcast_shared_and_alert_edge(self):
+        first = await self.client.ws_connect("/ws",headers=self.headers)
+        second = await self.client.ws_connect("/ws",headers=self.headers)
+        await first.receive_json(timeout=2)
+        await second.receive_json(timeout=2)
+        data = json.loads(self.snapshot.read());data["seq"]=2;data["cpu"]["usage"]=95
+        self.snapshot.store(data)
+        async def next_type(ws,kind):
+            for _ in range(8):
+                value=await ws.receive_json(timeout=2)
+                if value["type"]==kind and (kind!="status" or value["seq"]==2): return value
+            self.fail("Expected message absent")
+        self.assertEqual(await next_type(first,"status"),await next_type(second,"status"))
+        alert=await next_type(first,"alert")
+        self.assertEqual(alert["source"],"cpu");self.assertEqual(alert,await next_type(second,"alert"))
+        await first.close();await second.close()
+
+
+class AgentLogicTests(unittest.TestCase):
+    def test_alert_edges(self):
+        engine=agent.AlertEngine()
+        data={"seq":1,"timestamp":1,"cpu":{"usage":91},"memory":{"percent":20},"disk":{"percent":20}}
+        self.assertEqual(len(engine.edges(data)),1)
+        self.assertEqual(engine.edges(data),[])
+        data["cpu"]["usage"]=89;self.assertEqual(engine.edges(data),[])
+        data["cpu"]["usage"]=95;self.assertEqual(len(engine.edges(data)),1)
 
     def test_temperature_absent(self):
         with patch.object(agent.psutil, "sensors_temperatures", return_value={}, create=True):
             self.assertIsNone(agent.cpu_temperature())
 
     def test_bounds_and_nonfinite(self):
-        with self.assertRaises(ValueError): self.snapshot.store({"data":"x"*5000})
-        with self.assertRaises(ValueError): self.snapshot.store({"value":float("nan")})
+        with self.assertRaises(ValueError): agent.Snapshot().store({"data":"x"*5000})
+        with self.assertRaises(ValueError): agent.Snapshot().store({"value":float("nan")})
         with self.assertRaises(ValueError): agent.active("nginx;id.service")
         with self.assertRaises(ValueError): agent.active("--help.service")
 
@@ -84,7 +107,7 @@ class AgentTests(unittest.TestCase):
              patch.object(agent.psutil, "boot_time", return_value=1), \
              patch.object(agent.os, "getloadavg", return_value=(0.53,0.38,0.29), create=True):
             result = agent.Collector(config).sample()
-        self.assertEqual(set(result), {"version","timestamp","hostname","uptime","cpu","memory","disk","network","services"})
+        self.assertEqual(set(result), {"v","type","seq","timestamp","hostname","uptime","cpu","memory","disk","network","services"})
         self.assertIsNone(result["cpu"]["temperature"])
         self.assertEqual(result["network"]["rx_bps"], 0)
         self.assertEqual(result["network"]["tx_bps"], 0)

@@ -15,4 +15,11 @@ with tempfile.TemporaryDirectory(prefix="passport-monitor-tests-") as directory:
         "-I"+str(root/"main"), "-I"+str(json_dir), str(root/"tests/test_server_state.c"),
         str(root/"main/server_state.c"), str(json_dir/"cJSON.c"), "-lm", "-o", str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
+with tempfile.TemporaryDirectory(prefix="passport-logic-tests-") as directory:
+    binary = Path(directory) / ("logic.exe" if os.name == "nt" else "logic")
+    subprocess.run([os.environ.get("CC", "cc"), "-std=c11", "-Wall", "-Wextra", "-Werror",
+        "-I"+str(root/"main"), "-I"+str(root/"main/monitor"), "-I"+str(json_dir),
+        str(root/"tests/test_monitor_logic.c"), str(root/"main/monitor/monitor_logic.c"),
+        str(root/"main/audio/ulaw.c"), str(root/"main/server_state.c"), str(json_dir/"cJSON.c"), "-lm", "-o", str(binary)], check=True)
+    subprocess.run([str(binary)], check=True)
 subprocess.run([sys.executable, str(root/"tests/test_status_agent.py")], check=True)

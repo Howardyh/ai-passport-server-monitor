@@ -1,0 +1,16 @@
+#ifndef LV_CONF_H
+#define LV_CONF_H
+#define LV_COLOR_DEPTH 16
+#define LV_MEM_SIZE (@MONITOR_LV_KIB@*1024U)
+#define LV_USE_OS LV_OS_NONE
+#define LV_USE_QRCODE 1
+#define LV_USE_CHART 1
+#define LV_FONT_MONTSERRAT_14 1
+#define LV_FONT_MONTSERRAT_20 1
+#define LV_USE_ASSERT_MALLOC 1
+#define LV_USE_LOG 1
+#define LV_LOG_LEVEL LV_LOG_LEVEL_WARN
+#define LV_USE_ASSERT_OBJ 1
+#define LV_ASSERT_HANDLER_INCLUDE "host_assert.h"
+#define LV_ASSERT_HANDLER host_fail(__FILE__,__LINE__);
+#endif
