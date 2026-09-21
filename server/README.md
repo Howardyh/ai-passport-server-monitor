@@ -9,8 +9,9 @@ and keep 8765 closed. Configure a domain A/AAAA record for the VPS before issuin
 its public-CA certificate. API hostname remains configurable on the device.
 
 This folder provides the read-only metrics service and an Nginx example. These
-instructions are for a later server deployment; this firmware build task does
-not install services on your server or request SSH access.
+instructions can be used to deploy your own server. The owner deployed this Agent
+on 2026-09-21 and verified authenticated public REST/WSS with valid TLS. This is
+self-hosted software, not a public monitoring service or a distribution of API credentials.
 
 ## Install
 

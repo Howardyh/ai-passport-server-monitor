@@ -2,7 +2,9 @@
 
 # fl0AT AI Passport Server Monitor
 
-**v0.2.0-beta.1 — Architecture Rewrite. Hardware validation pending.**
+**v0.2.0-beta.1 — Architecture Rewrite; main includes the subsequent startup fix.**
+
+The original tag contains a Wi-Fi stack fault; build current main. Basic device startup and live metric updates have been verified; broader hardware validation remains pending. See [Changelog](CHANGELOG.md).
 
 Independent ESP32-C3 firmware for the FoloToy AI Passport: 8 MB Flash, no PSRAM,
 240 x 320 ST7789 display, CW2017 battery gauge and ES8311 speaker. Official BSP
@@ -139,6 +141,8 @@ HTTP/WSS authentication/broadcast. They cannot establish hardware stability.
 heap under simultaneous TLS/audio, stack watermarks, real Wi-Fi failures, OTA power
 loss/rollback and battery drain remain untested on the board.
 
+Device follow-up (2026-09-21): repaired startup, retained Wi-Fi configuration and live metrics confirmed by the owner. Production REST/WSS deployment passed public TLS/authentication and sustained push checks. The repaired app passed the complete local gate; the original architecture commit passed GitHub CI. Firmware and credentials remain local.
+
 ## Security and release policy
 
 No built-in Wi-Fi credentials, API token or private keys. TLS verification stays
@@ -146,14 +150,13 @@ enabled; SNTP must establish time before monitoring. JSON is bounded at 4096 byt
 with depth, type/range and duplicate-key checks. Unknown message types cannot execute
 commands. Credentials are atomically stored but NVS is not encrypted in this beta;
 physical flash access can reveal them. Secure boot/encryption provisioning is
-outside this release. No eFuses or real device settings are changed.
+outside this release. The authorized device test preserved NVS/PHY sectors; no eFuses were changed.
 
 Before each commit/push run `python tools/check_repo.py`,
 `python tools/check-monitor-secrets.py` and review the staged diff. Public release
 is a GitHub **Pre-release of source only**, with no firmware assets. See
-[CHANGELOG](CHANGELOG.md). **Device flashing is prohibited in this stage**: no flash,
-erase, bootloader reset, serial connection or NVS clearing is performed. A later
-explicit authorization is required before any device operation.
+[CHANGELOG](CHANGELOG.md). Device operations require explicit authorization. The owner
+authorized segmented flashing for the startup repair; no whole-chip erase was performed.
 
 After dependency resolution, `python tools/test-monitor-ui.py` renders the actual
 LVGL pages with synthetic data, a configured 32 KiB pool and BSP-sized partial

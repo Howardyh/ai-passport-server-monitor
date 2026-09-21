@@ -2,7 +2,9 @@
 
 # fl0AT AI Passport Server Monitor
 
-**v0.2.0-beta.1 — Architecture Rewrite。Hardware validation pending.**
+**v0.2.0-beta.1 — Architecture Rewrite；main 已包含后续启动修正。**
+
+原标签含 Wi-Fi 栈溢出问题，请构建当前 main。已验证基础启动和实时指标更新；更完整的硬件验收仍待完成，见[更新日志](CHANGELOG.zh_CN.md)。
 
 独立 ESP32-C3 固件：8 MB Flash、无 PSRAM、240×320 ST7789、CW2017 电量计与
 ES8311 扬声器。保留官方 BSP 引脚和成熟驱动，只启动 Server Monitor，不包含课程表或
@@ -103,6 +105,8 @@ Windows 在激活 IDF 的环境中通过 Git Bash 使用同一入口，并提供
 **Hardware validation pending.** 屏幕可读性、扫码、音质、TLS+音频并发 heap、栈水位、
 真实 Wi-Fi 故障、OTA 断电/回滚、电池续航仍待真机验证。
 
+真机跟进（2026-09-21）：启动修正、保留 Wi-Fi 配置，用户确认实时指标更新。生产 REST/WSS 已部署并通过公网 TLS、鉴权与持续推送检查。修正版通过本地完整 gate，原架构提交通过 GitHub CI；固件与凭据仍只保留本地。
+
 ## 安全和发布
 
 无内置 Wi-Fi 密码、API Token、私钥；TLS 验证始终开启，监控前等待 SNTP。
@@ -111,7 +115,7 @@ NVS 原子提交，但 beta 未启用加密，物理读 Flash 可暴露凭据。
 
 每次 commit/push 前运行 `python tools/check_repo.py` 和 `python tools/check-monitor-secrets.py`，
 检查 staged diff。GitHub 只发源码 **Pre-release**，不上传固件，见 [CHANGELOG](CHANGELOG.zh_CN.md)。
-**本阶段禁止烧录**：不 flash/erase/reset bootloader/连接串口/清除 NVS，后续必须明确授权。
+设备操作须明确授权。本项目已在用户授权后完成分段烧录和启动修正验证，没有执行整片擦除。
 
 依赖解析完成后运行 `python tools/test-monitor-ui.py`，以合成数据、配置的 32 KiB LVGL 池
 和 BSP 大小局部缓冲渲染实际页面，PPM 输出位于 `build/ui-validation/`，不操作设备。

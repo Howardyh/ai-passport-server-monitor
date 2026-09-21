@@ -6,8 +6,9 @@
 不连接或管理其他服务器。腾讯云安全组按需放行 Nginx HTTPS/443，保持 8765 关闭。
 先为 VPS 配置域名 A/AAAA 记录，再签发公共 CA 证书；设备 API 域名保持可配置。
 
-此目录包含只读指标服务和 Nginx 示例。以下供后续服务器部署使用，本轮固件构建
-不会在服务器安装服务，也不请求 SSH 访问。
+此目录包含只读指标服务和 Nginx 示例，供部署自己的服务器。项目所有者已于
+2026-09-21 部署并验证公网 REST/WSS、TLS 和鉴权。公开的是自托管软件，不提供公共
+监控账号或 API 凭据。
 
 ## 安装
 
@@ -88,4 +89,4 @@ Agent 使用 aiohttp，同一个最新缓存供 GET /api/v1/status 与 /ws，仍
 每秒采样、每两秒广播，最多 16 个客户端，不为每个请求重新采样。协议为 v=1/type=status/seq/
 timestamp；CPU/RAM/Disk >=90% 推送边沿 alert。WebSocket 在 upgrade 前验证 Bearer header，
 禁止 query Token/重复认证头。20 秒心跳，Nginx 转发 Upgrade/Connection，65 秒读超时。
-运行测试前安装 requirements.txt 内的 psutil 与 aiohttp。本次未部署真实服务器/OTA manifest。
+运行测试前安装 requirements.txt 内的 psutil 与 aiohttp。实际 REST/WSS 服务已部署验证；OTA manifest 和固件未发布。

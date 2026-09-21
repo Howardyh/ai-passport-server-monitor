@@ -116,11 +116,13 @@ Ubuntu 24.04、Python3、psutil、aiohttp。单采样线程→加锁最新缓存
 发送有超时，不为客户端重复采样。Bearer 常量时间比较，拒绝重复认证头和 query，关闭请求日志。
 配置由 systemd 从 /etc/passport-status.env 读取，仅监听 127.0.0.1:8765，禁止 root。
 Nginx 转发 Upgrade/Connection/Authorization，关闭缓存和缓冲，WSS 65 秒读超时大于 20+10
-心跳周期。未修改真实服务器；示例固件路由默认关闭，需运营者另行安全部署。
+心跳周期。已于 2026-09-21 部署实际 Agent 和 Nginx 路由并验证；固件路由仍默认关闭。
 
 ## 验收边界
 
 主机测试和固件编译是发布 gate。物理显示、扫码、手机配网/重连、音质、并发 Heap、电流、
 OTA 断电/回滚均 NOT TESTED。Coredump/Flash 可能含秘密，留本地。NVS 加密、安全启动、独立
 签名 manifest 为后续计划；service/message/update_available、任意文字播报、VoiceFS OTA
-未实现。此次无烧录、串口连接、擦除或设备复位。
+未实现。后续经授权真机测试发现原标签的 Wi-Fi 任务栈溢出；当前 main 复用任务独占
+command/config 缓冲区，将编译栈帧由 2,224 降到 192 字节。修正版通过本地完整 gate 和
+设备启动观察，服务端部署后用户确认实时指标更新。分段烧录保留 NVS/PHY，未整片擦除。

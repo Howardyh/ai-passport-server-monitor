@@ -167,8 +167,8 @@ timeout. Slow clients do not resample system metrics. Auth uses constant-time Be
 comparison, rejects duplicate headers and token queries, disables request logging,
 and loads configuration from `/etc/passport-status.env` through systemd.
 Nginx forwards Upgrade/Connection/Authorization, disables cache/buffering and uses
-65-second WSS read timeout, longer than 20+10-second heartbeat. No production server
-was modified. The example firmware route stays disabled until an operator publishes
+65-second WSS read timeout, longer than 20+10-second heartbeat. The production Agent
+and Nginx route were deployed and validated on 2026-09-21. The firmware route stays disabled until an operator publishes
 reviewed app-only images and manifests securely.
 
 ## Acceptance boundaries
@@ -179,4 +179,8 @@ heap, power drain and interrupted OTA/rollback are NOT TESTED. Coredumps/flash c
 potential secrets; keep them local. NVS encryption, secure boot and signed independent
 manifests remain planned hardening. Service/message/update_available push types are
 reserved; general-purpose pushed text/TTS and VoiceFS OTA are not implemented.
-No flashing, serial connection, erase or reset is part of this release preparation.
+Follow-up authorized device testing found a Wi-Fi worker stack overflow in the original tag.
+Current main reuses one worker-owned command/config buffer, reducing its compiled frame
+from 2,224 to 192 bytes. The repaired app passed the complete local gate and device startup
+observation; the owner confirmed live metrics after server deployment. NVS/PHY sectors
+were preserved during segmented flashing. Long-duration and broader hardware tests remain pending.

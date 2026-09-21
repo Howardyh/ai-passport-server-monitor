@@ -239,16 +239,18 @@ static void publish_config(const monitor_config_t *cfg) {
 }
 static void wifi_task(void *arg) {
     (void)arg;
-    monitor_config_t loaded = {0};
-    monitor_config_snapshot(&loaded);
-    bool configured=monitor_config_valid(&loaded);
-    publish_config(&loaded); memset(&loaded, 0, sizeof(loaded));
+    /* Owned only by this singleton worker. Reuse the command's config storage
+     * at startup; two 1 KiB configs on this stack left too little headroom for
+     * newlib formatting and the Wi-Fi driver on ESP32-C3. */
+    static command_t cmd;
+    monitor_config_snapshot(&cmd.config);
+    bool configured=monitor_config_valid(&cmd.config);
+    publish_config(&cmd.config); memset(&cmd, 0, sizeof(cmd));
     unsigned failures = 0;
     uint64_t next = 0, connect_deadline = 0, setup_deadline = 0;
     bool connecting = false, was_connected = false;
     if(!configured && portal_start()==ESP_OK) setup_deadline=millis()+300000;
     for (;;) {
-        command_t cmd;
         if (xQueueReceive(s_commands, &cmd, pdMS_TO_TICKS(100)) == pdTRUE) {
             if (cmd.type == WIFI_CMD_PROVISION) {
                 if (s_httpd) portal_stop();
