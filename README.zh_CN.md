@@ -1,14 +1,25 @@
-[English](README.md)
+**简体中文** · [English](README.en.md)
 
 # fl0AT AI Passport Server Monitor
 
-**v0.2.0-beta.1 — Architecture Rewrite；main 已包含后续启动修正。**
+**🖥️ 把服务器状态装进口袋，抬眼就能掌握运行情况。**
 
-原标签含 Wi-Fi 栈溢出问题，请构建当前 main。已验证基础启动和实时指标更新；更完整的硬件验收仍待完成，见[更新日志](CHANGELOG.zh_CN.md)。
+为 FoloToy AI Passport 打造的独立服务器监控固件：在小屏上查看实时指标、服务状态与告警，
+用实体按键快速切换页面，让日常巡检多一个随手可看的入口。
 
-独立 ESP32-C3 固件：8 MB Flash、无 PSRAM、240×320 ST7789、CW2017 电量计与
+- 📊 **状态一目了然**：CPU、内存、磁盘、网络流量与服务状态，六个页面按需查看。
+- 🔌 **连接有后备**：WSS 实时推送搭配 HTTPS 轮询回退，保留最近有效数据并明确标示连接状态。
+- 🔊 **告警听得见**：本地中文语音提示，支持分级告警、音量调节与静音设置。
+- 📱 **上手更轻松**：手机扫码配网，设置服务器地址与 API Token 后即可连接。
+
+**v0.2.0-beta.1 — 架构重写；当前 main 已包含后续启动修正。**
+
+原 `v0.2.0-beta.1` 标签含 Wi-Fi 栈溢出问题，请构建当前 `main`。已验证基础启动和实时指标更新；
+更完整的硬件验收仍待完成，见[更新日志](CHANGELOG.zh_CN.md)。
+
+硬件平台为 ESP32-C3：8 MB Flash、无 PSRAM、240×320 ST7789、CW2017 电量计与
 ES8311 扬声器。保留官方 BSP 引脚和成熟驱动，只启动 Server Monitor，不包含课程表或
-官方 Demo 菜单。许可证见 [LICENSE](LICENSE)。
+官方 Demo 菜单。采用 MIT 许可证，见 [LICENSE](LICENSE)。
 
 ## 网络与协议
 

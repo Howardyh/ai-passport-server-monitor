@@ -1,165 +1,134 @@
-[简体中文](README.zh_CN.md)
+**简体中文** · [English](README.en.md)
 
 # fl0AT AI Passport Server Monitor
 
-**v0.2.0-beta.1 — Architecture Rewrite; main includes the subsequent startup fix.**
+**🖥️ 把服务器状态装进口袋，抬眼就能掌握运行情况。**
 
-The original tag contains a Wi-Fi stack fault; build current main. Basic device startup and live metric updates have been verified; broader hardware validation remains pending. See [Changelog](CHANGELOG.md).
+为 FoloToy AI Passport 打造的独立服务器监控固件：在小屏上查看实时指标、服务状态与告警，
+用实体按键快速切换页面，让日常巡检多一个随手可看的入口。
 
-Independent ESP32-C3 firmware for the FoloToy AI Passport: 8 MB Flash, no PSRAM,
-240 x 320 ST7789 display, CW2017 battery gauge and ES8311 speaker. Official BSP
-pins and drivers are retained. The only linked application entry is Server Monitor;
-no course schedule or official demo menu is in the firmware. MIT; see [LICENSE](LICENSE).
+- 📊 **状态一目了然**：CPU、内存、磁盘、网络流量与服务状态，六个页面按需查看。
+- 🔌 **连接有后备**：WSS 实时推送搭配 HTTPS 轮询回退，保留最近有效数据并明确标示连接状态。
+- 🔊 **告警听得见**：本地中文语音提示，支持分级告警、音量调节与静音设置。
+- 📱 **上手更轻松**：手机扫码配网，设置服务器地址与 API Token 后即可连接。
 
-## Connection and protocol
+**v0.2.0-beta.1 — 架构重写；当前 main 已包含后续启动修正。**
 
-WSS Primary (`wss://status.dyhcn.com/ws`) and HTTPS Polling Fallback
-(`https://status.dyhcn.com/api/v1/status`) share one validated ServerState.
-Both addresses are configurable. The [server agent](server/README.md) samples once
-per second and broadcasts its cached snapshot every two seconds. REST reads the
-same cache. Nginx terminates HTTPS/WSS; the agent listens only on 127.0.0.1:8765.
-Both routes require an Authorization Bearer header; tokens never go in URLs.
+原 `v0.2.0-beta.1` 标签含 Wi-Fi 栈溢出问题，请构建当前 `main`。已验证基础启动和实时指标更新；
+更完整的硬件验收仍待完成，见[更新日志](CHANGELOG.zh_CN.md)。
 
-Protocol 1 uses `v`, `type`, `seq`, `timestamp`. `status` and `alert` are implemented.
-`service`, `message`, and `update_available` are reserved and ignored safely;
-OTA availability is currently checked through the manifest. Temperature may be
-missing or null and displays `--`. Other required fields are checked atomically;
-invalid input preserves the last good state. See [status.example.json](server/status.example.json).
+硬件平台为 ESP32-C3：8 MB Flash、无 PSRAM、240×320 ST7789、CW2017 电量计与
+ES8311 扬声器。保留官方 BSP 引脚和成熟驱动，只启动 Server Monitor，不包含课程表或
+官方 Demo 菜单。采用 MIT 许可证，见 [LICENSE](LICENSE)。
 
-WSS uses Espressif's pinned client, CA bundle and hostname validation. Ping interval
-is 20 seconds, pong timeout 10 seconds, and 30 seconds without accepted application
-data forces a fresh connection even if pongs still arrive. Reconnect base delays
-are 1/2/4/8/16/30 seconds, with 0–10% downward jitter. Three failed connections enable
-HTTPS polling every 10 seconds while WSS recovery continues. A fresh WSS message
-restores LIVE. Data becomes STALE after 15 seconds and OFFLINE after 60 seconds;
-values remain visible. HTTPS latency measures request time, not ICMP or WSS RTT.
+## 网络与协议
 
-## First boot and QR provisioning
+WSS 主通道默认 `wss://status.dyhcn.com/ws`，HTTPS 备用默认
+`https://status.dyhcn.com/api/v1/status`，均可配置，共用 ServerState。
+[服务器 Agent](server/README.zh_CN.md) 每秒采样、每两秒广播缓存快照；REST 读取同一缓存。
+仅监听 127.0.0.1:8765，Nginx 负责 TLS。两种通道都通过 Authorization Bearer header
+认证，不把 Token 放 URL。
 
-Without valid NVS configuration, setup starts automatically. Hold OK at any time
-to reopen setup. Scan the Wi-Fi QR to join `fl0AT-Passport-XXXX`, a temporary WPA2
-AP with a random password. The QR contains only ephemeral AP credentials. Open
-`http://192.168.4.1` if the captive portal does not open automatically.
+协议 v1 包含 `v/type/seq/timestamp`，实现 status 和 alert；service/message/update_available
+暂保留并安全忽略，更新可用性通过 manifest 查询。temperature 缺失或 null 显示 `--`；
+其余必需字段非法时拒绝整条数据并保留上次有效状态。[JSON 示例](server/status.example.json)。
 
-The setup page provides scanned networks, SSID/password, server host, WSS/HTTPS
-URLs, API token, device name, POSIX timezone and default volume. Enter a 2.4 GHz
-WPA2-compatible network and a random 32–128 character token. Save & Connect validates
-and commits one NVS blob before closing the portal and connecting STA. Failed saves
-retain prior settings. Setup closes after five minutes and allows one phone.
-The screen never prints saved passwords or tokens; the temporary key is encoded
-only in the QR. A per-session nonce protects setup POSTs. DNS answers are restricted
-to the AP subnet; the STA is disconnected during setup. No automatic NVS erase occurs.
-The old configuration blob is read for migration without deleting it.
+官方 WebSocket 客户端使用 CA bundle 与主机名验证，20 秒 ping、10 秒 pong 超时；
+30 秒没有有效应用数据也重建连接。重连基准 1/2/4/8/16/30 秒，加入向下 0–10% 抖动。
+三次失败后每 10 秒 HTTPS 轮询，仍持续恢复 WSS；收到新 WSS 数据恢复 LIVE。
+15 秒后 STALE，60 秒后 OFFLINE，保留指标。延迟指 HTTPS 请求耗时，不是 ping 或 WSS RTT。
 
-## Pages and controls
+## 首次启动与扫码配网
 
-Black/white terminal UI with green/yellow/red indicators, fixed widgets and no
-screen recreation during updates. ASCII text avoids missing emoji/Chinese glyphs.
+没有有效 NVS 配置时自动启动；长按 OK 可重新进入。二维码连接随机密码 WPA2 临时热点
+`fl0AT-Passport-XXXX`，只含临时 AP 凭据。若手机未自动弹出页面，打开 `http://192.168.4.1`。
 
-| Page | Information |
+页面包含可用网络、SSID/密码、服务器 Host、WSS/HTTPS URL、API Token、设备名称、POSIX
+时区与默认音量。支持 2.4 GHz WPA2 兼容网络，Token 32–128 字符。Save & Connect 验证并
+提交单个 NVS blob，再关闭门户并连接 STA。保存失败保留旧设置；五分钟超时，最多一部手机。
+屏幕不显示已保存密码与 Token，临时热点密码只在二维码内。配置 POST 使用会话 nonce。
+DNS 只回答 AP 子网，配网期间 STA 断开。迁移旧配置不删除旧 blob，不自动擦除 NVS。
+
+## 页面与按键
+
+黑白终端风格，绿黄红指示，固定控件，更新不重建屏幕。ASCII 字体不依赖 Emoji/中文字形。
+
+| 页面 | 内容 |
 | --- | --- |
-| Overview | CPU/RAM/disk bars, RX/TX, uptime, connection, RSSI, battery |
-| Performance | CPU and RAM, nullable temperature, load averages, two-minute trends |
-| Network | Rates, HTTPS latency, Wi-Fi RSSI, WSS message age, reconnect count |
-| Services | Nginx/MariaDB/PHP-FPM online/offline, most recent alert |
-| Device | Battery, firmware, uptime, heap, Wi-Fi, IP |
-| Settings | Network, Audio, Display, Power, Update, Diagnostics |
+| Overview | CPU/RAM/Disk、RX/TX、运行时间、连接、RSSI、电量 |
+| Performance | CPU/RAM、可空温度、负载、两分钟趋势 |
+| Network | 速率、HTTPS 延迟、RSSI、WSS 消息年龄、重连数 |
+| Services | Nginx/MariaDB/PHP-FPM、最新告警 |
+| Device | 电池、固件、运行时间、Heap、Wi-Fi、IP |
+| Settings | Network/Audio/Display/Power/Update/Diagnostics |
 
-UP/DOWN change pages; OK requests a fallback refresh. Hold DOWN opens Settings.
-Hold UP toggles mute. Hold OK starts setup. In Settings use DOWN to select and OK
-to apply; UP returns from a section. At the main settings list, DOWN past the last
-entry returns to Overview. Audio volume advances in steps of 10 and wraps to zero.
-Any button wakes a blank/dim screen; that first press is consumed. Brightness is
-10–100%; screen timeout is Never/30s/1m/5m/10m. Live keeps WSS when the screen blanks;
-Balanced dims to 10% and keeps WSS; Battery Saver closes WSS while ambient and polls
-HTTPS every 60 seconds. These are display/network policies, not deep sleep.
+UP/DOWN 切页，OK 请求备用刷新；长按 DOWN 打开设置，长按 UP 静音，长按 OK 配网。
+设置中 DOWN 选择、OK 应用、UP 返回；设置主列表末尾再按 DOWN 返回 Overview。
+音量每次 +10，100 后回到 0。屏幕 dim/off 后首个按键只唤醒。亮度 10–100%，超时
+Never/30s/1m/5m/10m。Live 熄屏保留 WSS，Balanced 调暗为 10% 保留 WSS，Battery Saver
+环境模式断开 WSS、每 60 秒 HTTPS。这里不进入深睡眠。
 
-## Audio and alerts
+## 音频和告警
 
-17 locally synthesized Chinese voice clips are stored in SPIFFS VoiceFS as
-16 kHz mono G.711 mu-law (754,080 payload bytes). Streaming expands 256 bytes into
-512 bytes of PCM; the BSP controls ES8311 playback volume. No speech is synthesized
-on the MCU and no giant PCM C arrays are linked. See [asset notes](docs/assets/server-monitor-architecture.md#audio).
+17 段本机离线合成中文语音放 SPIFFS VoiceFS，16 kHz 单声道 G.711 μ-law，原始总大小
+754,080 字节。每次解码 256 字节为 512 字节 PCM，通过 BSP 设置 ES8311 播放音量。
+设备无 TTS、不把巨大 PCM 数组编译进 app。[资源说明](docs/assets/server-monitor-architecture.zh_CN.md)。
 
-A dedicated worker drains bounded INFO/WARNING/CRITICAL queues. Higher priorities
-clear lower waiting queues and preempt playback at the next 16 ms chunk. Normal
-voice cooldown is 30 seconds; critical is 60 seconds. First sync speaks once per
-boot, regular snapshots remain silent. Settings persist voice enable, volume,
-startup/network/server/critical categories, alert sound and critical bypass mute.
-Bypass defaults OFF and explicit mute is respected. CPU/RAM/disk >=90% produces
-edge alerts; returning below 90% rearms that source. Authenticated server alerts
-also appear on screen and use severity-appropriate voice.
+独立任务处理 INFO/WARNING/CRITICAL 有界队列；高优先级清理低优先级等待队列并在下一
+16 ms 分块抢占。普通冷却 30 秒，严重 60 秒。首次同步每次启动只播一次，正常快照静默。
+持久化 Voice、音量、启动/网络/服务器/严重分类、提示音与严重告警绕过静音，绕过默认 OFF。
+CPU/RAM/Disk >=90% 边沿触发，低于 90% 重新布防。服务器告警显示消息并按严重度播报。
 
-## OTA and diagnostics
+## OTA 与诊断
 
-Two 3 MB OTA slots, NVS, OTA data, VoiceFS and coredump fit the 8 MB layout.
-[Architecture and partition analysis](docs/assets/server-monitor-architecture.md)
-describe the migration and memory budgets. Settings / Update fetches
-`https://<configured API origin>/firmware/manifest.json`; a second confirmation
-on the device is needed to install an available version. The manifest requires
-version, same-origin HTTPS URL, SHA-256 and app-only image size. The worker pauses
-WSS, checks TLS, size, hash, ESP image/chip/project and version before selecting
-the new slot. Version format is `major.minor.patch` or `major.minor.patch-beta.N`.
-Newer versions only; no redirect or cross-origin token forwarding. A successful
-boot requires NVS, display/UI progress and running network task before marking
-valid. ESP-IDF rollback is enabled. A first migration from the old factory layout
-requires a separately authorized partition-table update; it cannot be delivered
-as an ordinary app-only OTA. VoiceFS is not updated by app-only OTA.
+两个 3 MB OTA 槽、NVS、OTA Data、VoiceFS、Coredump 均位于 8 MB 内。
+[架构与分区分析](docs/assets/server-monitor-architecture.zh_CN.md) 描述迁移及内存预算。
+Settings / Update 获取配置 API 同源的 `/firmware/manifest.json`，选择更新后需在设备上
+再次按 OK 确认。manifest 包含 version、同源 HTTPS app-only URL、SHA256、size。
+下载前暂停 WSS，校验 TLS、大小、SHA256、ESP 镜像/芯片/项目与版本后才切换启动分区。
+版本格式 major.minor.patch 或 major.minor.patch-beta.N，只接受更新版本，不跟随重定向。
+新固件须通过 NVS、Display/UI 进度、network task 自检才 mark valid，启用 IDF rollback。
+旧 factory 分区首次迁移必须另外授权更新分区表，普通 app-only OTA 不能完成；OTA 不更新 VoiceFS。
 
-Diagnostics shows firmware/uptime, free/minimum heap, largest block, RSSI/IP,
-WSS age/state, HTTP latency, reconnects, server, last error, audio queue/errors
-and dropped events. Coredumps and private logs remain local and can contain secrets.
-No firmware manifest or binary has been deployed to the live server by this task.
+诊断显示版本、运行时间、free/minimum heap、最大块、RSSI/IP、WSS 年龄/状态、API 延迟、
+重连、服务器、错误、音频队列/错误、丢失事件。Coredump/私有日志可能包含秘密，只保留本地。
+本任务没有向实际服务器部署 manifest 或 binary。
 
-## Build and validation
+## 构建验证
 
-Activate ESP-IDF **5.5.3**; LVGL is pinned to **9.5.0** and WebSocket client to **1.6.1**.
-Version comes from [version.txt](version.txt). Install Python test dependencies, then:
+ESP-IDF **5.5.3**，LVGL **9.5.0**，WebSocket **1.6.1**。版本统一来自 [version.txt](version.txt)。
 
 ```sh
 python -m pip install -r server/requirements.txt
 ./tools/validate.sh --static
 ./tools/validate.sh --firmware
-# Or run the complete gate:
 ./tools/validate.sh
 ```
 
-Native Windows uses the same entry through Git Bash with an activated IDF Python,
-CC and actionlint. The adapter builds in a fresh validation directory using tracked
-defaults, merges all listed partitions, verifies bounds/bytes/ELF identity, and
-archives `build/firmware/<SHA256>/`. Output: `build/FoloToy-AI-Passport-full.bin`.
-Use `python tools/archive_firmware.py verify <bundle>` to verify the archive.
-The matching `voicefs.bin` also remains in the validation directory; the merged
-image contains it. Binaries, ELF, MAP and private config stay local. CI runs the
-complete gate, with no artifact upload or release publishing.
+Windows 在激活 IDF 的环境中通过 Git Bash 使用同一入口，并提供 CC/actionlint/Python。
+官方 gate 从 tracked defaults 在全新目录编译、合并、校验分区范围/字节/ELF 身份并归档到
+`build/firmware/<SHA256>/`，输出 `build/FoloToy-AI-Passport-full.bin`。
+用 `python tools/archive_firmware.py verify <bundle>` 核验；独立 voicefs.bin 留在 validation
+目录，合并镜像也包含它。二进制、ELF、MAP、私有配置只留本地；CI 完整验证且不上传固件。
 
-Host tests cover protocol validation, missing/null/invalid data, fragmentation,
-state retention and transport transitions, alert edges, cooldown/priority,
-volume/ring bounds, formatting, version/manifest parsing, audio decoding and
-HTTP/WSS authentication/broadcast. They cannot establish hardware stability.
-**Hardware validation pending.** Screen readability, QR scanning, audio quality,
-heap under simultaneous TLS/audio, stack watermarks, real Wi-Fi failures, OTA power
-loss/rollback and battery drain remain untested on the board.
+主机测试覆盖 JSON 缺失/null/非法类型、分片、状态保留/通道切换、告警边沿、音频冷却/优先级、
+边界/趋势/格式化、版本/manifest、音频解码与 HTTP/WSS 认证/广播。
+**Hardware validation pending.** 屏幕可读性、扫码、音质、TLS+音频并发 heap、栈水位、
+真实 Wi-Fi 故障、OTA 断电/回滚、电池续航仍待真机验证。
 
-Device follow-up (2026-09-21): repaired startup, retained Wi-Fi configuration and live metrics confirmed by the owner. Production REST/WSS deployment passed public TLS/authentication and sustained push checks. The repaired app passed the complete local gate; the original architecture commit passed GitHub CI. Firmware and credentials remain local.
+真机跟进（2026-09-21）：启动修正、保留 Wi-Fi 配置，用户确认实时指标更新。生产 REST/WSS 已部署并通过公网 TLS、鉴权与持续推送检查。修正版通过本地完整 gate，原架构提交通过 GitHub CI；固件与凭据仍只保留本地。
 
-## Security and release policy
+## 安全和发布
 
-No built-in Wi-Fi credentials, API token or private keys. TLS verification stays
-enabled; SNTP must establish time before monitoring. JSON is bounded at 4096 bytes,
-with depth, type/range and duplicate-key checks. Unknown message types cannot execute
-commands. Credentials are atomically stored but NVS is not encrypted in this beta;
-physical flash access can reveal them. Secure boot/encryption provisioning is
-outside this release. The authorized device test preserved NVS/PHY sectors; no eFuses were changed.
+无内置 Wi-Fi 密码、API Token、私钥；TLS 验证始终开启，监控前等待 SNTP。
+JSON 上限 4096 字节，检查深度/类型/范围/重复键。未知消息不能执行命令。
+NVS 原子提交，但 beta 未启用加密，物理读 Flash 可暴露凭据。安全启动/eFuse/加密配置不在此次范围。
 
-Before each commit/push run `python tools/check_repo.py`,
-`python tools/check-monitor-secrets.py` and review the staged diff. Public release
-is a GitHub **Pre-release of source only**, with no firmware assets. See
-[CHANGELOG](CHANGELOG.md). Device operations require explicit authorization. The owner
-authorized segmented flashing for the startup repair; no whole-chip erase was performed.
+每次 commit/push 前运行 `python tools/check_repo.py` 和 `python tools/check-monitor-secrets.py`，
+检查 staged diff。GitHub 只发源码 **Pre-release**，不上传固件，见 [CHANGELOG](CHANGELOG.zh_CN.md)。
+设备操作须明确授权。本项目已在用户授权后完成分段烧录和启动修正验证，没有执行整片擦除。
 
-After dependency resolution, `python tools/test-monitor-ui.py` renders the actual
-LVGL pages with synthetic data, a configured 32 KiB pool and BSP-sized partial
-buffer. Its PPM outputs remain in `build/ui-validation/`; it does not operate a device.
+依赖解析完成后运行 `python tools/test-monitor-ui.py`，以合成数据、配置的 32 KiB LVGL 池
+和 BSP 大小局部缓冲渲染实际页面，PPM 输出位于 `build/ui-validation/`，不操作设备。
 
-![Actual LVGL host render; synthetic data, not hardware](assets/images/server-monitor-v020-preview.png)
+![实际 LVGL 主机渲染；合成数据，非真机照片](assets/images/server-monitor-v020-preview.png)
